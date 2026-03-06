@@ -1,0 +1,193 @@
+// This is your Prisma schema file.
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  // output = "../generated/prisma" // opcional
+}
+
+datasource db {
+  provider = "postgresql"
+  //url      = env("DATABASE_URL")
+}
+
+/**
+ * ==== ENUMS ====
+ */
+enum RolUsuario {
+  ADMIN
+  DOCTOR
+  PACIENTE
+}
+
+enum Sexo {
+  M
+  F
+  X
+}
+
+enum EstadoCita {
+  PENDIENTE_PAGO
+  ACEPTADA
+  CANCELADA
+  NO_ASISTIO
+}
+
+/**
+ * ==== MODELOS ====
+ */
+model User {
+  id            BigInt     @id @default(autoincrement())
+  username      String     @unique
+  email_login   String?
+  password_hash String
+  rol           RolUsuario
+  activo        Boolean    @default(true)
+  created_at    DateTime   @default(now()) @db.Timestamptz(6)
+  last_login_at DateTime?  @db.Timestamptz(6)
+
+  Doctor   Doctor?
+  Paciente Paciente?
+
+  CitaCreadas    Cita[]      @relation("CitasCreadas")
+  CitaCanceladas Cita[]      @relation("CitasCanceladas")
+  auditorias     Auditoria[]
+}
+
+model Doctor {
+  id                       BigInt   @id @default(autoincrement())
+  user_id                  BigInt   @unique
+  nombres                  String
+  apellido_paterno         String
+  apellido_materno         String?
+  fecha_nacimiento         DateTime @db.Date
+  sexo                     Sexo
+  dni                      String   @unique
+  celular                  String
+  correo                   String?
+  matricula                String   @unique
+  fecha_contratacion       DateTime @db.Date
+  fecha_registro           DateTime @default(now()) @db.Date
+  duracion_minutos_default Int      @default(30)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  citas          Cita[]               @relation("CitasDoctor")
+  atendio        Cita[]               @relation("DoctorAtendio")
+  especialidades DoctorEspecialidad[]
+  horarios       DoctorHorarioRegla[]
+  bloqueos       DoctorBloqueo[]
+}
+
+model Paciente {
+  id               BigInt   @id @default(autoincrement())
+  user_id          BigInt   @unique
+  nombres          String
+  apellido_paterno String
+  apellido_materno String?
+  fecha_nacimiento DateTime @db.Date
+  sexo             Sexo
+  dni              String   @unique
+  celular          String
+  correo           String?
+  fecha_registro   DateTime @default(now()) @db.Date
+
+  user  User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  citas Cita[] @relation("CitasPaciente")
+}
+
+model Especialidad {
+  id          BigInt  @id @default(autoincrement())
+  nombre      String  @unique
+  descripcion String?
+
+  doctores DoctorEspecialidad[]
+  citas    Cita[]
+}
+
+model DoctorEspecialidad {
+  doctor_id        BigInt
+  especialidad_id  BigInt
+  duracion_minutos Int?
+  es_principal     Boolean @default(false)
+
+  doctor       Doctor       @relation(fields: [doctor_id], references: [id], onDelete: Cascade)
+  especialidad Especialidad @relation(fields: [especialidad_id], references: [id], onDelete: Restrict)
+
+  @@id([doctor_id, especialidad_id])
+}
+
+model DoctorHorarioRegla {
+  id          BigInt   @id @default(autoincrement())
+  doctor_id   BigInt
+  dia_semana  Int
+  hora_inicio DateTime @db.Time
+  hora_fin    DateTime @db.Time
+  activo      Boolean  @default(true)
+
+  doctor Doctor @relation(fields: [doctor_id], references: [id], onDelete: Cascade)
+
+  @@index([doctor_id, dia_semana], name: "idx_horario_doc_dia")
+}
+
+model DoctorBloqueo {
+  id        BigInt   @id @default(autoincrement())
+  doctor_id BigInt
+  inicio    DateTime @db.Timestamptz(6)
+  fin       DateTime @db.Timestamptz(6)
+  motivo    String?
+
+  doctor Doctor @relation(fields: [doctor_id], references: [id], onDelete: Cascade)
+
+  @@index([doctor_id, inicio, fin], name: "idx_bloqueo_doc_rango")
+}
+
+model Cita {
+  id                    BigInt     @id @default(autoincrement())
+  paciente_id           BigInt
+  doctor_id             BigInt
+  especialidad_id       BigInt
+  inicio                DateTime   @db.Timestamptz(6)
+  fin                   DateTime   @db.Timestamptz(6)
+  estado                EstadoCita @default(PENDIENTE_PAGO)
+  creado_por_user_id    BigInt?
+  notas                 String?
+  doctor_atendio_id     BigInt?
+  cancelado_por_user_id BigInt?
+  cancelado_en          DateTime?  @db.Timestamptz(6)
+  motivo_cancelacion    String?
+  creado_en             DateTime   @default(now()) @db.Timestamptz(6)
+  actualizado_en        DateTime   @default(now()) @db.Timestamptz(6)
+
+  paciente     Paciente     @relation("CitasPaciente", fields: [paciente_id], references: [id], onDelete: Restrict)
+  doctor       Doctor       @relation("CitasDoctor", fields: [doctor_id], references: [id], onDelete: Restrict)
+  especialidad Especialidad @relation(fields: [especialidad_id], references: [id], onDelete: Restrict)
+
+  creado_por     User?   @relation("CitasCreadas", fields: [creado_por_user_id], references: [id])
+  cancelado_por  User?   @relation("CitasCanceladas", fields: [cancelado_por_user_id], references: [id])
+  doctor_atendio Doctor? @relation("DoctorAtendio", fields: [doctor_atendio_id], references: [id])
+
+  @@index([doctor_id, inicio], name: "idx_citas_doctor_inicio")
+  @@index([paciente_id, inicio], name: "idx_citas_paciente_inicio")
+}
+
+model ParametroSistema {
+  clave       String   @id
+  valor_text  String?
+  valor_int   Int?
+  valor_bool  Boolean?
+  descripcion String?
+}
+
+model Auditoria {
+  id              BigInt   @id @default(autoincrement())
+  tabla           String
+  registro_id     String
+  accion          String
+  usuario_id      BigInt?
+  valores_antes   Json?
+  valores_despues Json?
+  fecha           DateTime @default(now()) @db.Timestamptz(6)
+
+  usuario User? @relation(fields: [usuario_id], references: [id], onDelete: SetNull)
+}
