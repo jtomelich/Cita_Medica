@@ -18,13 +18,13 @@ const adapter = new PrismaPg(pool);
 
 export default defineConfig({
   datasource: {
-    provider: 'postgresql',
+    //provider: 'postgresql',
     url: connectionString,           // <-- ya existe porque dotenv cargó .env
   },
 
 
   // Habilita el cliente clásico con adapter
-  adapter,
+  //adapter,
 
   
 });
